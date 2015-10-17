@@ -46,7 +46,7 @@ class Reader(object):
     def __set_ids__(self, line):
         """Sets the process ids."""
         try:
-            self.ids = [int(x) for x in ' '.join(line.split()).split(" ")]
+            self.ids = [x for x in ' '.join(line.split()).split(" ")]
         except ValueError:
             logging.error("Error while reading process id's: INVALID NUMBER.")
             return False
@@ -67,7 +67,7 @@ class Reader(object):
             logging.error("Given Matrix doesn't have %d rows", self.no_process)
         index = 1
         for line in lines:
-            row_weights = [int(x) for x in ' '.join(line.split()).split(" ")]
+            row_weights = [float(x) for x in ' '.join(line.split()).split(" ")]
             if len(row_weights) != self.no_process:
                 logging.error("Process %d doesn't have enough edge weights", index)
                 status = False
