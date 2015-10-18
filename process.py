@@ -227,4 +227,6 @@ class Process(object):
         ack_msg = Message()
         ack_msg = ack_msg.acknowledge_leader()
         self.parent_edge.send_message(ack_msg, self.process_id)
+
+    
     

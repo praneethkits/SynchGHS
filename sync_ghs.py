@@ -5,6 +5,7 @@ import time
 import argparse
 import logging
 import reader
+from edge import Edge
 
 
 def main():
@@ -21,7 +22,30 @@ def main():
     if not input_parser.read_data():
         logging.error("Parsing of input file failed.")
         sys.exit(-1)
-    
+
+def attach_edges(edges, process_id, edge):
+    """Attaches a edge to process."""
+    if process_id in edges:
+        edges[process_id].append(edge)
+    else:
+        edges[process_id] = [edge]
+        
+def create_edges(input_parser):
+    """Created the required edges between all process."""
+    process_ids = input_parser.ids
+    edge_weights = input_parser.weights
+    current_process_index = 0
+    edges = {}
+    for i in xrange(len(process_ids)):
+        j = i+1
+        while j<len(process_ids):
+            edge_id = str(process_ids[i]) + "," + str(process_ids[j])
+            edge = Edge(edge_id, str(process_ids[i]), str(process_ids[j]), edge_weights[i][j])
+            attach_edges(edges, process_ids[i], edge)
+            attach_edges(edges, process_ids[j], edge)
+            j += 1
+    return edges
+
 def setup_log(log_file, level):
     """Sets up logging to file and console."""
     logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
