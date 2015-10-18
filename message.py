@@ -41,9 +41,25 @@ class Message(object):
         self.process = leader
         return self
 
-    def merge_request(self, level_id):
+    def merge_request(self, level_id, component_id):
         self.type = "merge"
-        self.msg = level_id
+        self.level = level_id
+        self.component_id = component_id
         return self
-        
+
+    def update_component(self, level_id, component_id):
+        self.type = "update_component"
+        self.level = level_id
+        self.component_id = component_id
+        return self
+
+    def acknowledge_leader(self):
+        self.type = "ack_leader"
+        self.msg = "updated cmponent"
+        return self
+
+    def merge_request_to_leader(self, msg):
+        self.type = "merge_to_leader"
+        self.msg = msg
+        return self
     

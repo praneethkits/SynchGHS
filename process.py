@@ -151,11 +151,55 @@ class Process(object):
     def send_join_request(self, MWOE):
         """Sends the join request to the MWOE."""
         msg = Message()
-        msg.merge_request(self.level)
+        msg = msg.merge_request(self.level, self.component_id)
         if not MWOE.send_message(msg, self.process_id):
             logging.info("Merge Request from process_id: %s through" +
                          " edge %s failed", str(self.process_id), str(MWOE.id))
             return False
         return True
+        
+    def update_component_id(self, component_id):
+        self.component_id = component_id
+        
+    def update_leader(self, leader):
+        self.leader = leader
+        
+    def unite_forest(self, msg):
+        """This fuunction is called by leader process to update the component
+        of all process in the current forest."""
+        if msg.component_id > self.component_id:
+            logging.info("Process %s is setting as non leader.",
+                         str(self.process_id))
+            self.update_leader(False)
+        else:
+            if self.level == msg.level:
+                self.level += 1
+            msg = Message()
+            msg = msg.update_component(self.level, self.component_id)
+            for edge in self.mst_edges:
+                edge.send_message(msg)
+            edges_seen = []
+            while len(edges_seen) != len(self.mst_edges):
+                for edge in [e for e in self.mst_edges if e not in seen_edges]:
+                    self.messages_lock.acquire()
+                    if "ack_leader" in self.messages[edge.id]:
+                        msg = self.messages[edge.id]["ack_leader"]
+                        seen_edges.append(edge)
+                    self.messages_lock.release()
     
-    def 
+    def merge(self, msg):
+        """Merges two forests in the spanning tree."""
+        if self.leader:
+            self.unite_forest(msg)
+        else:
+            new_msg = Message()
+            new_msg = new_msg.merge_request_to_leader(msg)
+            self.parent_edge.send_message(new_msg)
+
+    def work_on_merge_to_leader_msg(self, msg):
+        """Process the merge message from the child process."""
+        if self.leader:
+            actual_msg = msg.msg
+            self.unite_forest(actual_msg)
+        else:
+            self.parent_edge.send_message(msg)
