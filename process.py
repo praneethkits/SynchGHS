@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Constructs the process class."""
+import logging
 import edge
 from message import Message
 import time
@@ -22,6 +23,14 @@ class Process(object):
         self.index_edges()
         self.messages_lock = Lock()
         self.messages = {}
+
+    def run(self, queue):
+        """Process starts here."""
+        logging.info("Process Id: %s", self.process_id)
+        logging.info("Number of adjacent process = %d", len(self.edges))
+        time.sleep(1)
+        logging.info("Process completed.")
+        return
         
     def get_edge_processid(self, edge):
         """Returns the other end process id of edge."""

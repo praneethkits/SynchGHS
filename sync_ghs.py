@@ -5,7 +5,10 @@ import time
 import argparse
 import logging
 import reader
+import Queue
 from edge import Edge
+from process import Process
+from threading import Thread, Lock
 
 
 def main():
@@ -22,6 +25,27 @@ def main():
     if not input_parser.read_data():
         logging.error("Parsing of input file failed.")
         sys.exit(-1)
+        
+    edges = create_edges(input_parser)
+    for process in edges:
+        logging.info("\nProcess edges: %s\n", process)
+        for edge in edges[process]:
+            logging.info("edge created with following details")
+            logging.info("edge id %s", edge.id)
+            logging.info("source_process %s", edge.source_process)
+            logging.info("destination process %s", edge.dest_process)
+            logging.info("edge weight %s", str(edge.get_weight()))
+    processes = create_process(input_parser.ids, edges)
+    
+    # Start the process.
+    process_messages = {}
+    process_threads = {}
+    for process_id in input_parser.ids:
+        p_q = Queue.Queue()
+        p_t = Thread(name=process_id, target=processes[process_id].run, args=(p_q,))
+        p_t.start()
+        process_messages[process_id] = p_q
+        process_threads[process_id] = p_t
 
 def attach_edges(edges, process_id, edge):
     """Attaches a edge to process."""
@@ -39,12 +63,24 @@ def create_edges(input_parser):
     for i in xrange(len(process_ids)):
         j = i+1
         while j<len(process_ids):
+            if edge_weights[i][j] == -1:
+                j += 1
+                continue
             edge_id = str(process_ids[i]) + "," + str(process_ids[j])
             edge = Edge(edge_id, str(process_ids[i]), str(process_ids[j]), edge_weights[i][j])
             attach_edges(edges, process_ids[i], edge)
             attach_edges(edges, process_ids[j], edge)
             j += 1
     return edges
+    
+def create_process(process_ids, edges):
+    """creates the process"""
+    processes = {}
+    for process_id in process_ids:
+        process = Process(process_id, edges[process_id])
+        processes[process_id] = process
+        logging.info("process %s is created.", process_id)
+    return processes
 
 def setup_log(log_file, level):
     """Sets up logging to file and console."""
