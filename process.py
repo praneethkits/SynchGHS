@@ -68,7 +68,7 @@ class Process(object):
     def broadcast_messages(self, message):
         """Broadcasts the given message among all edges."""
         for edge in self.edges:
-            edge.send_message(self.process_id, message)
+            edge.send_message(message, self.process_id)
             
     def get_min_edge(self):
         """This function returns the minimum edge of all the incident edges."""
@@ -86,7 +86,7 @@ class Process(object):
         for edge in self.mst_edges:
             if edge == self.parent_edge:
                 continue
-            edge.send_message(self.process_id, msg)
+            edge.send_message(msg, self.process_id)
         recieved_mwoe_msgs = []
         seen_edges = []
         if self.parent_edge:
@@ -141,7 +141,7 @@ class Process(object):
             for edge in [e for e in self.edges if e not in seen_edges]:
                 self.messages_lock.acquire()
                 if "ret_test" in self.messages[edge.id]:
-                    msg = self.messages[edge.id]["ret_test"]
+                    msg = self.messages[edge.id]["ret_test"].pop()
                     if msg.msg != self.component_id:
                         self.non_mst_edges.append(edge)
                     seen_edges.append(edge)
@@ -177,13 +177,13 @@ class Process(object):
             msg = Message()
             msg = msg.update_component(self.level, self.component_id)
             for edge in self.mst_edges:
-                edge.send_message(msg)
+                edge.send_message(msg, self.process_id)
             edges_seen = []
             while len(edges_seen) != len(self.mst_edges):
                 for edge in [e for e in self.mst_edges if e not in seen_edges]:
                     self.messages_lock.acquire()
                     if "ack_leader" in self.messages[edge.id]:
-                        msg = self.messages[edge.id]["ack_leader"]
+                        msg = self.messages[edge.id]["ack_leader"].pop()
                         seen_edges.append(edge)
                     self.messages_lock.release()
     
@@ -194,12 +194,37 @@ class Process(object):
         else:
             new_msg = Message()
             new_msg = new_msg.merge_request_to_leader(msg)
-            self.parent_edge.send_message(new_msg)
+            self.parent_edge.send_message(new_msg, self.process_id)
 
     def work_on_merge_to_leader_msg(self, msg):
         """Process the merge message from the child process."""
         if self.leader:
+            logging.info("Leader process %s received the merge request.",
+                         str(self.process_id))
             actual_msg = msg.msg
             self.unite_forest(actual_msg)
         else:
-            self.parent_edge.send_message(msg)
+            logging.info("Message to merge from child is sent to parent " +
+                         "by process %s", str(self.process_id))
+            self.parent_edge.send_message(msg, self.process_id)
+
+    def process_update_component_msg(self, msg, in_edge):
+        """Process the update component msg from the leader."""
+        self.level = msg.level
+        self.component_id = msg.component_id
+        self.parent_edge = in_edge
+        for edge in [e for e in self.mst_edges if e != in_edge]:
+            edge.send_message(msg, self.process_id)
+        seen_edges = [in_edge]
+        while len(seen_edges) != len(mst_edges):
+            for edge in [e for e in self.mst_edges if e not in seen_edges]:
+                self.messages_lock.acquire()
+                if "ack_leader" in self.messages[edge.id]:
+                    ack_msg = self.messages[edge.id]["ack_leader"].pop()
+                    seen_edges.append(edge)
+                self.messages_lock.release()
+            time.sleep(0.5)
+        ack_msg = Message()
+        ack_msg = ack_msg.acknowledge_leader()
+        self.parent_edge.send_message(ack_msg, self.process_id)
+    
