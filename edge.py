@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """ The file defines the edge class. """
 import logging
+from threading import Lock
 
 class Edge(object):
     """Defines the properties of edge."""
@@ -10,6 +11,8 @@ class Edge(object):
         self.dest_process = dest_process
         self.__weight__ = weight
         self.id = id
+        self.forward_msg_lock = Lock()
+        self.reverse_msg_lock = Lock()
         self.forward_messages = []
         self.reverse_messages = []
         
@@ -20,9 +23,13 @@ class Edge(object):
     def send_message(self, message, process_id):
         """"send the messages from source to destination."""
         if process_id == self.source_process:
+            self.forward_msg_lock.acquire()
             self.forward_messages.insert(0, message)
+            self.forward_msg_lock.release()
         elif process_id == self.dest_process:
+            self.reverse_msg_lock.acquire()
             self.reverse_messages.insert(0, message)
+            self.reverse_msg_lock.release()
         else:
             logging.error("Unable to send message from given process_id: %s",
                           str(process_id))
@@ -31,10 +38,22 @@ class Edge(object):
 
     def receive_message(self, process_id):
         """Returns the tuple boolean and a message if available."""
-        if process_id = self.dest_process:
-            return (True, self.forward_messages.pop())
+        if process_id == self.dest_process:
+            self.forward_msg_lock.acquire()
+            try:
+                msg = self.forward_messages.pop()
+            except Exception as cause:
+                msg = None
+            self.forward_msg_lock.release()
+            return (True, msg)
         elif process_id == self.dest_process:
-            return (True, self.reverse_messages.pop())
+            self.reverse_msg_lock.acquire()
+            try:
+                msg = self.reverse_messages.pop()
+            except Exception as cause:
+                msg = None
+            self.reverse_msg_lock.release()
+            return (True, msg)
         else:
             return (False, "")
  

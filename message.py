@@ -17,6 +17,11 @@ class Message(object):
         self.msg = component_id
         return self
 
+    def ret_test_message(self, component_id):
+        self.type = "ret_test"
+        self.msg = component_id
+        return self
+
     def send_MWOE(self, edge_weight, edge_id, process_id):
         self.type = "ret_MWOE"
         self.msg = edge_weight
@@ -34,6 +39,11 @@ class Message(object):
     def send_Leader(self, leader):
         self.type = "ret_leader"
         self.process = leader
+        return self
+
+    def merge_request(self, level_id):
+        self.type = "merge"
+        self.msg = level_id
         return self
         
     
