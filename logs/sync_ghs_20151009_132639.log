@@ -1,9 +1,0 @@
-2015-10-09 13:26:39,351 [MainThread  ] [INFO ]  No of Process: 5
-2015-10-09 13:26:39,351 [MainThread  ] [ERROR]  Given number of ids and process count doesn't match
-2015-10-09 13:26:39,351 [MainThread  ] [ERROR]  Given Matrix doesn't have 5 rows
-2015-10-09 13:26:39,352 [MainThread  ] [ERROR]  Process 1 doesn't have enough edge weights
-2015-10-09 13:26:39,352 [MainThread  ] [ERROR]  Process 2 doesn't have enough edge weights
-2015-10-09 13:26:39,352 [MainThread  ] [ERROR]  Process 3 doesn't have enough edge weights
-2015-10-09 13:26:39,352 [MainThread  ] [ERROR]  Process 4 doesn't have enough edge weights
-2015-10-09 13:26:39,352 [MainThread  ] [INFO ]  ['Edge Weights: ', [0, 10000, 3, 8], [1, 0, 45, 6], [10000, 2, 0, 9], [23, 12, 4, 0]]
-2015-10-09 13:26:39,352 [MainThread  ] [ERROR]  Parsing of input file failed.

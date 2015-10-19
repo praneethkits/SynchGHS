@@ -6,7 +6,6 @@ import argparse
 import logging
 import reader
 import Queue
-import inspect
 from edge import Edge
 from process import Process
 from threading import Thread, Lock
@@ -57,6 +56,7 @@ def main():
             p_q_f, _ = process_messages[process_id]
             p_q_f.put("start_round")
         time.sleep(2)
+        print "\n\n\n\n\n"
         while len(sent_process) != len(process_messages):
             for process_id in [p for p in process_messages if p not in sent_process]:
                 _, p_q_b = process_messages[process_id]
@@ -114,10 +114,6 @@ def create_process(process_ids, edges):
         processes[process_id] = process
         logging.info("process %s is created.", process_id)
     return processes
-    
-def lineno():
-    """Returns the current line number in our program."""
-    return inspect.currentframe().f_back.f_lineno
 
 def setup_log(log_file, level):
     """Sets up logging to file and console."""

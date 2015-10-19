@@ -48,6 +48,11 @@ class Process(object):
                     queue_b.put("completed")
             elif msg == "stop":
                 break
+            adjacency_list = []
+            for edge in self.mst_edges:
+                adjacency_list.append(self.get_edge_processid(edge))
+            print "Process %s, Adjacency list = %s, component_id = %s, level=%d"\
+                %(self.process_id, ", ".join(adjacency_list), self.component_id, self.level)
             time.sleep(1)
         self.run_listener = False
         listner_t.join()
@@ -194,8 +199,7 @@ class Process(object):
                 if "ret_MWOE" in self.messages[edge.id] and\
                         len(self.messages[edge.id]["ret_MWOE"]) != 0:
                     mwoe_msg = self.messages[edge.id]["ret_MWOE"].pop()
-                    recieved_mwoe_edges.append(mwoe_msg)
-                    msgs_recvd += 1
+                    recieved_mwoe_msgs.append(mwoe_msg)
                     seen_edges.append(edge)
                 self.messages_lock.release()
             time.sleep(0.5)
@@ -206,7 +210,7 @@ class Process(object):
             if msg.msg < min_weight:
                 min_weight = msg.msg
                 min_edge_id = msg.edge_id
-                min_process_id = msg.process_id
+                min_process_id = msg.process
         current_min_edge = self.get_min_edge()
         if current_min_edge.get_weight() < min_weight:
             min_weight = current_min_edge.get_weight()
@@ -276,6 +280,8 @@ class Process(object):
         else:
             if self.level == msg.level:
                 self.level += 1
+            elif self.level < msg.level:
+                self.level = msg.level
             msg = Message()
             msg = msg.update_component(self.level, self.component_id)
             for edge in self.mst_edges:
