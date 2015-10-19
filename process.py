@@ -19,18 +19,49 @@ class Process(object):
         self.mst_edges = []
         self.non_mst_edges = []
         self.edges_index = {}
+        self.edgeid_index = {}
         self.leader = True
         self.index_edges()
         self.messages_lock = Lock()
         self.messages = {}
+        self.setup_messages()
+        self.run_listener = True
 
     def run(self, queue):
         """Process starts here."""
         logging.info("Process Id: %s", self.process_id)
         logging.info("Number of adjacent process = %d", len(self.edges))
+        listner_t = Thread(name=self.process_id + ".listener", target=self.message_listener)
+        listner_t.start()
+        self.run_round()
         time.sleep(1)
+        self.run_listener = False
+        listner_t.join()
         logging.info("Process completed.")
         return
+        
+    def run_round(self):
+        """Runs the current round before rporting back."""
+        self.get_non_mst_edges()
+        mwoe_msg = self.find_MWOE()
+        logging.info("MWOE details: edge id: %s, weight: %d",
+                     mwoe_msg.edge_id, mwoe_msg.msg)
+        if self.leader:
+            if mwoe_msg.process == self.process_id:
+                self.send_join_request(self.get_edge(mwoe_msg.edge_id))
+            else:
+                # code for leader to send the mwoe request to its child
+                merge_mwoe_msg = Message()
+                merge_mwoe_msg = merge_mwoe_msg.merge_MWOE(mwoe_msg.edge_id,
+                                                           mwoe_msg.process)
+                for edge in self.mst_edges:
+                    edge.send_message(merge_mwoe_msg, self.process_id)
+        else:
+            self.parent_edge.send_message(mwoe_msg, self.process_id)
+
+    def get_edge(self, edge_id):
+        """Returns the edge with the given edge_id"""
+        return self.edgeid_index[edge_id]
         
     def get_edge_processid(self, edge):
         """Returns the other end process id of edge."""
@@ -47,10 +78,17 @@ class Process(object):
     def message_listener(self):
         """Listens for the message from other process and stores the messages
         as required."""
+        logging.info("listener Started.")
         while True:
+            logging.info(self.messages)
+            if not self.run_listener:
+                break
             for edge in self.edges:
-                msg = edge.receive_message(self.process_id)
+                status, msg = edge.receive_message(self.process_id)
                 if msg is None:
+                    continue
+                if not status:
+                    logging.warning("Unable to receive message")
                     continue
                 if msg.type == "test":
                     ret_msg = Message()
@@ -69,6 +107,7 @@ class Process(object):
 
     def index_edges(self):
         for edge in self.edges:
+            self.edgeid_index[edge.id] = edge
             if edge.source_process == self.process_id:
                 self.edges_index[edge.dest_process] = edge
             else:

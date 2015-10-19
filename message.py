@@ -7,7 +7,7 @@ class Message(object):
     """Class Defines various types of messages."""
     def __init__(self):
         """Defines the required messages."""
-        self.type=None
+        self.type = None
         self.msg = ""
         self.process = None
         self.edge_id = None
@@ -27,6 +27,14 @@ class Message(object):
         self.msg = edge_weight
         self.process = process_id
         self.edge_id = edge_id
+        return self
+
+    def merge_MWOE(self, edge_id, process_id):
+        self.type = "merge_MWOE"
+        self.msg = "merge with mwoe"
+        self.process = process_id
+        self.edge_id = edge_id
+        return self
 
     def get_MWOE(self):
         self.type = "get_MWOE"

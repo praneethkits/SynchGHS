@@ -15,6 +15,11 @@ class Edge(object):
         self.reverse_msg_lock = Lock()
         self.forward_messages = []
         self.reverse_messages = []
+
+    def __str__(self):
+        ret_str = "Edge class with id = %s, between processes %s and %s" \
+            % (self.id, self.source_process, self.dest_process)
+        return ret_str
         
     def get_weight(self):
         """Returns the weight of edge."""
@@ -38,6 +43,8 @@ class Edge(object):
 
     def receive_message(self, process_id):
         """Returns the tuple boolean and a message if available."""
+        logging.debug("process_id=%s\nsource_process=%s\ndest_process=%s",
+                     process_id, self.source_process, self.dest_process)
         if process_id == self.dest_process:
             self.forward_msg_lock.acquire()
             try:
@@ -46,7 +53,7 @@ class Edge(object):
                 msg = None
             self.forward_msg_lock.release()
             return (True, msg)
-        elif process_id == self.dest_process:
+        elif process_id == self.source_process:
             self.reverse_msg_lock.acquire()
             try:
                 msg = self.reverse_messages.pop()
