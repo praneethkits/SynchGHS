@@ -42,11 +42,43 @@ def main():
     process_messages = {}
     process_threads = {}
     for process_id in input_parser.ids:
-        p_q = Queue.Queue()
-        p_t = Thread(name=process_id, target=processes[process_id].run, args=(p_q,))
+        p_q_f = Queue.Queue()
+        p_q_b = Queue.Queue()
+        p_t = Thread(name=process_id, target=processes[process_id].run, args=(p_q_f,p_q_b,))
         p_t.start()
-        process_messages[process_id] = p_q
+        process_messages[process_id] = (p_q_f, p_q_b)
         process_threads[process_id] = p_t
+
+    sent_process = set()
+    completed = set()
+    while len(completed) != len(process_messages):
+        sent_process = set()
+        for process_id in process_messages:
+            p_q_f, _ = process_messages[process_id]
+            p_q_f.put("start_round")
+        time.sleep(2)
+        while len(sent_process) != len(process_messages):
+            for process_id in [p for p in process_messages if p not in sent_process]:
+                _, p_q_b = process_messages[process_id]
+                try:
+                    msg = p_q_b.get()
+                    print msg
+                    if msg == "r_completed":
+                        sent_process.add(process_id)
+                        logging.info("Process %s round completed.", process_id)
+                    elif msg == "completed":
+                        sent_process.add(process_id)
+                        completed.add(process_id)
+                        logging.info("Process %s completed.", process_id)
+                except Exception as cause:
+                    print cause
+                    print "exception raised"
+                    continue
+            time.sleep(1)
+
+    for process_id in process_messages:
+        p_q = process_messages[process_id]
+        p_q.add("stop")
 
 def attach_edges(edges, process_id, edge):
     """Attaches a edge to process."""
