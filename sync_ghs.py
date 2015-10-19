@@ -6,6 +6,7 @@ import argparse
 import logging
 import reader
 import Queue
+import inspect
 from edge import Edge
 from process import Process
 from threading import Thread, Lock
@@ -81,10 +82,16 @@ def create_process(process_ids, edges):
         processes[process_id] = process
         logging.info("process %s is created.", process_id)
     return processes
+    
+def lineno():
+    """Returns the current line number in our program."""
+    return inspect.currentframe().f_back.f_lineno
 
 def setup_log(log_file, level):
     """Sets up logging to file and console."""
-    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] "
+                                     "[%(levelname)-5.5s] [%(lineno)5d]"
+                                     " %(message)s")
     rootLogger = logging.getLogger()
     rootLogger.setLevel(level)
     

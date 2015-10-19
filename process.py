@@ -5,6 +5,7 @@ import edge
 from message import Message
 import time
 from threading import Thread, Lock
+import inspect
 
 
 class Process(object):
@@ -16,7 +17,7 @@ class Process(object):
         self.edges = edges
         self.parent_edge = None
         self.level = 0
-        self.mst_edges = []
+        self.mst_edges = set()
         self.non_mst_edges = []
         self.edges_index = {}
         self.edgeid_index = {}
@@ -31,19 +32,27 @@ class Process(object):
         """Process starts here."""
         logging.info("Process Id: %s", self.process_id)
         logging.info("Number of adjacent process = %d", len(self.edges))
-        listner_t = Thread(name=self.process_id + ".listener", target=self.message_listener)
+        listner_t = Thread(name=self.process_id + ".listener",
+                           target=self.message_listener)
         listner_t.start()
         self.run_round()
-        time.sleep(1)
+        time.sleep(9)
         self.run_listener = False
         listner_t.join()
+        adjacency_list = []
+        for edge in self.mst_edges:
+            adjacency_list.append(self.get_edge_processid(edge))
+        print "Process %s, Adjacency list = %s, component_id = %s"\
+            %(self.process_id, ", ".join(adjacency_list), self.component_id)
         logging.info("Process completed.")
         return
         
     def run_round(self):
         """Runs the current round before rporting back."""
         self.get_non_mst_edges()
-        mwoe_msg = self.find_MWOE()
+        if self.leader:
+            logging.info("finding mwoe")
+            mwoe_msg = self.find_MWOE()
         logging.info("MWOE details: edge id: %s, weight: %d",
                      mwoe_msg.edge_id, mwoe_msg.msg)
         if self.leader:
@@ -58,6 +67,21 @@ class Process(object):
                     edge.send_message(merge_mwoe_msg, self.process_id)
         else:
             self.parent_edge.send_message(mwoe_msg, self.process_id)
+        index = 0
+        merged = False
+        while index < 8:
+            self.messages_lock.acquire()
+            if "merge" in self.messages[mwoe_msg.edge_id]:
+                logging.info("Merge message received from edge %s", mwoe_msg.edge_id)
+                self.mst_edges.add(self.get_edge(mwoe_msg.edge_id))
+                merge_msg = self.messages[mwoe_msg.edge_id]['merge'].pop()
+                self.messages_lock.release()
+                self.merge(merge_msg)
+                merged = True
+                break
+            self.messages_lock.release()
+            time.sleep(1)
+            index += 1
 
     def get_edge(self, edge_id):
         """Returns the edge with the given edge_id"""
@@ -79,8 +103,9 @@ class Process(object):
         """Listens for the message from other process and stores the messages
         as required."""
         logging.info("listener Started.")
+        sub_threads = []
         while True:
-            logging.info(self.messages)
+            logging.debug(self.messages)
             if not self.run_listener:
                 break
             for edge in self.edges:
@@ -97,13 +122,23 @@ class Process(object):
                     logging.info("Test message returned to process: %s",
                                  str(self.get_edge_processid(edge)))
                     continue
+                elif msg.type == "update_component":
+                    sub_t = Thread(name=self.process_id + ".l.upd_comp",
+                                      target=self.process_update_component_msg,
+                                      args=(msg, edge,))
+                    sub_t.start()
+                    sub_threads.append(sub_t)
+                    continue
                 self.messages_lock.acquire()
+                logging.info("Message type: %s", msg.type)
                 if msg.type in self.messages[edge.id]:
                     self.messages[edge.id][msg.type].append(msg)
                 else:
                     self.messages[edge.id][msg.type] = [msg]
                 self.messages_lock.release()
             time.sleep(1)
+        for t in sub_threads:
+            t.join()
 
     def index_edges(self):
         for edge in self.edges:
@@ -226,11 +261,14 @@ class Process(object):
             msg = msg.update_component(self.level, self.component_id)
             for edge in self.mst_edges:
                 edge.send_message(msg, self.process_id)
-            edges_seen = []
-            while len(edges_seen) != len(self.mst_edges):
+            seen_edges = []
+            for edge in self.mst_edges:
+                logging.info("MST EDGE %s", str(edge))
+            while len(seen_edges) != len(self.mst_edges):
                 for edge in [e for e in self.mst_edges if e not in seen_edges]:
                     self.messages_lock.acquire()
                     if "ack_leader" in self.messages[edge.id]:
+                        logging.info("acknowledge received from edge: %s", edge.id)
                         msg = self.messages[edge.id]["ack_leader"].pop()
                         seen_edges.append(edge)
                     self.messages_lock.release()
@@ -264,7 +302,9 @@ class Process(object):
         for edge in [e for e in self.mst_edges if e != in_edge]:
             edge.send_message(msg, self.process_id)
         seen_edges = [in_edge]
-        while len(seen_edges) != len(mst_edges):
+        for edge in self.mst_edges:
+            logging.info("MST EDGE %s", str(edge))
+        while len(seen_edges) != len(self.mst_edges):
             for edge in [e for e in self.mst_edges if e not in seen_edges]:
                 self.messages_lock.acquire()
                 if "ack_leader" in self.messages[edge.id]:
@@ -274,7 +314,5 @@ class Process(object):
             time.sleep(0.5)
         ack_msg = Message()
         ack_msg = ack_msg.acknowledge_leader()
-        self.parent_edge.send_message(ack_msg, self.process_id)
-
-    
-    
+        in_edge.send_message(ack_msg, self.process_id)
+        logging.info("Acknowledge send through edge %s", in_edge.id)

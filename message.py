@@ -63,7 +63,7 @@ class Message(object):
 
     def acknowledge_leader(self):
         self.type = "ack_leader"
-        self.msg = "updated cmponent"
+        self.msg = "updated component"
         return self
 
     def merge_request_to_leader(self, msg):
