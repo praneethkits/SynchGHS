@@ -54,6 +54,14 @@ class Message(object):
         self.level = level_id
         self.component_id = component_id
         return self
+        
+    def deny_merge(self):
+        self.type = "deny_merge"
+        return self
+
+    def deny_merge_upward(self):
+        self.type = "deny_merge_upward"
+        return self
 
     def update_component(self, level_id, component_id):
         self.type = "update_component"
@@ -69,5 +77,9 @@ class Message(object):
     def merge_request_to_leader(self, msg):
         self.type = "merge_to_leader"
         self.msg = msg
+        return self
+
+    def get_completed_msg(self):
+        self.type = "completed"
         return self
     

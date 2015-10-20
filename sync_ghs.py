@@ -56,13 +56,12 @@ def main():
             p_q_f, _ = process_messages[process_id]
             p_q_f.put("start_round")
         time.sleep(2)
-        print "\n\n\n\n\n"
+
         while len(sent_process) != len(process_messages):
             for process_id in [p for p in process_messages if p not in sent_process]:
                 _, p_q_b = process_messages[process_id]
                 try:
                     msg = p_q_b.get()
-                    print msg
                     if msg == "r_completed":
                         sent_process.add(process_id)
                         logging.info("Process %s round completed.", process_id)
@@ -75,10 +74,12 @@ def main():
                     print "exception raised"
                     continue
             time.sleep(1)
+        logging.info("completed = %d, processes = %d",
+                     len(completed), len(process_messages))
 
     for process_id in process_messages:
-        p_q = process_messages[process_id]
-        p_q.add("stop")
+        p_q_f, _ = process_messages[process_id]
+        p_q_f.put("stop")
 
 def attach_edges(edges, process_id, edge):
     """Attaches a edge to process."""

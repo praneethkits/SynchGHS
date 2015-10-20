@@ -27,6 +27,15 @@ class Process(object):
         self.messages = {}
         self.setup_messages()
         self.run_listener = True
+        self.merge_mwoe_received_lock = Lock()
+        self.merge_mwoe_received = None
+        self.round_completed = False
+        self.completed = False
+        
+    def log_mst_edges(self):
+        logging.info("MST EDGES for process: %s", self.process_id)
+        for edge in self.mst_edges:
+            logging.info(str(edge))
 
     def run(self, queue_f, queue_b):
         """Process starts here."""
@@ -40,8 +49,9 @@ class Process(object):
             logging.info("Message from main thread = %s", msg)
             if msg == "start_round":
                 self.run_round()
-                time.sleep(9)
-                if len(self.non_mst_edges):
+                while not self.round_completed:
+                    time.sleep(1)
+                if not self.completed:
                     logging.info("sending round completed message.")
                     queue_b.put("r_completed")
                 else:
@@ -51,8 +61,10 @@ class Process(object):
             adjacency_list = []
             for edge in self.mst_edges:
                 adjacency_list.append(self.get_edge_processid(edge))
-            print "Process %s, Adjacency list = %s, component_id = %s, level=%d"\
-                %(self.process_id, ", ".join(adjacency_list), self.component_id, self.level)
+            logging.info("Process %s, Adjacency list = %s, component_id ="
+                         " %s, level=%d, leader=%s",
+                         self.process_id, ", ".join(adjacency_list),
+                         self.component_id, self.level, str(self.leader))
             time.sleep(1)
         self.run_listener = False
         listner_t.join()
@@ -66,6 +78,8 @@ class Process(object):
         
     def run_round(self):
         """Runs the current round before rporting back."""
+        self.round_completed = False
+        self.merge_mwoe_received = None
         self.clear_ret_messages()
         self.get_non_mst_edges()
         if self.leader:
@@ -73,16 +87,28 @@ class Process(object):
             mwoe_msg = self.find_MWOE()
             logging.info("MWOE details: edge id: %s, weight: %f",
                          mwoe_msg.edge_id, mwoe_msg.msg)
+            if mwoe_msg.edge_id is None:
+                self.completed = True
+                self.round_completed = True
+                completed_msg = Message()
+                completed_msg = completed_msg.get_completed_msg()
+                for edge in self.mst_edges:
+                    edge.send_message(completed_msg, self.process_id)
+                return
+                
+            self.merge_mwoe_received = mwoe_msg
+            # code for leader to send the mwoe request to its child
+            merge_mwoe_msg = Message()
+            merge_mwoe_msg = merge_mwoe_msg.merge_MWOE(mwoe_msg.edge_id,
+                                                       mwoe_msg.process)
+            self.log_mst_edges()
+            for edge in self.mst_edges:
+                edge.send_message(merge_mwoe_msg, self.process_id)
+
             if mwoe_msg.process == self.process_id:
+                
                 self.send_join_request(self.get_edge(mwoe_msg.edge_id))
                 self.merge_mwoe(mwoe_msg)
-            else:
-                # code for leader to send the mwoe request to its child
-                merge_mwoe_msg = Message()
-                merge_mwoe_msg = merge_mwoe_msg.merge_MWOE(mwoe_msg.edge_id,
-                                                           mwoe_msg.process)
-                for edge in self.mst_edges:
-                    edge.send_message(merge_mwoe_msg, self.process_id)
 
     def get_edge(self, edge_id):
         """Returns the edge with the given edge_id"""
@@ -122,11 +148,12 @@ class Process(object):
                 if not status:
                     logging.warning("Unable to receive message")
                     continue
+                logging.info("Message type: %s", msg.type)
                 if msg.type == "test":
                     ret_msg = Message()
                     edge.send_message(ret_msg.ret_test_message(self.component_id),
                                       self.process_id)
-                    logging.info("Test message returned to process: %s",
+                    logging.debug("Test message returned to process: %s",
                                  str(self.get_edge_processid(edge)))
                     continue
                 elif msg.type == "update_component":
@@ -143,13 +170,42 @@ class Process(object):
                     sub_t.start()
                     sub_threads.append(sub_t)
                 elif msg.type == "merge_MWOE":
+                    self.merge_mwoe_received_lock.acquire()
+                    self.merge_mwoe_received = msg
+                    self.merge_mwoe_received_lock.release()
                     sub_t = Thread(name=self.process_id + ".l.merge",
                                    target=self.handle_merge_mwoe,
                                    args=(msg,))
+                    sub_t.start()
                     sub_threads.append(sub_t)
-                    
+                    continue
+                elif msg.type == "merge":
+                    sub_t = Thread(name=self.process_id + ".l.merge",
+                                   target=self.handle_merge_request,
+                                   args=(msg, edge,))
+                    sub_t.start()
+                    sub_threads.append(sub_t)
+                    # this msg should also be in messages dict, hence no
+                    # continue statement here.
+                elif msg.type == "merge_to_leader":
+                    sub_t = Thread(name=self.process_id + ".l.merge_leader",
+                                   target=self.work_on_merge_to_leader_msg,
+                                   args=(msg,))
+                    sub_t.start()
+                    sub_threads.append(sub_t)
+                    continue
+                elif msg.type == "deny_merge_upward":
+                    self.round_completed = True
+                    if self.parent_edge:
+                        self.parent_edge.send_message(msg, self.process_id)
+                    continue
+                elif msg.type == "completed":
+                    self.completed = True
+                    self.round_completed = True
+                    for ed in [e for e in self.mst_edges if e != edge]:
+                        ed.send_message(msg, self.process_id)
+                    continue
                 self.messages_lock.acquire()
-                logging.info("Message type: %s", msg.type)
                 if msg.type in self.messages[edge.id]:
                     self.messages[edge.id][msg.type].append(msg)
                 else:
@@ -177,7 +233,8 @@ class Process(object):
         min_edge = None
         min_weight = 1000000
         for edge in self.non_mst_edges:
-            if edge.get_weight() <= min_weight:
+            if edge.get_weight() < min_weight or \
+                    (edge.get_weight() == min_weight and edge.id < min_edge.id):
                 min_weight = edge.get_weight()
                 min_edge = edge
         return min_edge
@@ -207,17 +264,22 @@ class Process(object):
         min_weight = 1000000
         min_process_id = None
         for msg in recieved_mwoe_msgs:
-            if msg.msg < min_weight:
+            if msg.msg < min_weight or (msg.msg == min_weight and msg.edge_id < min_edge_id):
                 min_weight = msg.msg
                 min_edge_id = msg.edge_id
                 min_process_id = msg.process
+        if self.process_id == "G":
+            logging.info("Received mwoe details: min_weight=%f, min_edge_id=%s",min_weight,min_edge_id)
         current_min_edge = self.get_min_edge()
-        if current_min_edge.get_weight() < min_weight:
+        if current_min_edge and (current_min_edge.get_weight() < min_weight or 
+                (current_min_edge.get_weight() == min_weight and current_min_edge.id < min_edge_id)):
             min_weight = current_min_edge.get_weight()
             min_edge_id = current_min_edge.id
             min_process_id = self.process_id
         ret_msg = Message()
         ret_msg = ret_msg.send_MWOE(min_weight, min_edge_id, min_process_id)
+        logging.info("MWOE Details: edge_id %s, edge_weight %f, process: %s",
+                     min_edge_id, min_weight, min_process_id)
         return ret_msg
         
     def handle_get_MWOE(self, edge):
@@ -226,8 +288,8 @@ class Process(object):
 
     def find_MWOE(self):
         """This function finds the MWOE of all the edges."""
-        if self.level == 0 or (len(self.mst_edges) -1 == 0 and \
-                self.parent_edge is None) or len(self.mst_edges) == 0:
+        if self.level == 0 or (len(self.mst_edges) == 0 and \
+                self.parent_edge is None):
             edge = self.get_min_edge()
             ret_msg = Message()
             ret_msg = ret_msg.send_MWOE(edge.get_weight(), edge.id, self.process_id)
@@ -287,8 +349,7 @@ class Process(object):
             for edge in self.mst_edges:
                 edge.send_message(msg, self.process_id)
             seen_edges = []
-            for edge in self.mst_edges:
-                logging.info("MST EDGE %s", str(edge))
+            self.log_mst_edges()
             while len(seen_edges) != len(self.mst_edges):
                 for edge in [e for e in self.mst_edges if e not in seen_edges]:
                     self.messages_lock.acquire()
@@ -298,6 +359,7 @@ class Process(object):
                         msg = self.messages[edge.id]["ack_leader"].pop()
                         seen_edges.append(edge)
                     self.messages_lock.release()
+            self.round_completed = True
     
     def merge(self, msg):
         """Merges two forests in the spanning tree."""
@@ -309,9 +371,7 @@ class Process(object):
             self.parent_edge.send_message(new_msg, self.process_id)
 
     def merge_mwoe(self, mwoe_msg):
-        index = 0
-        merged = False
-        while index < 8:
+        while True:
             self.messages_lock.acquire()
             if "merge" in self.messages[mwoe_msg.edge_id] and\
                     len(self.messages[mwoe_msg.edge_id]['merge']):
@@ -320,20 +380,43 @@ class Process(object):
                 merge_msg = self.messages[mwoe_msg.edge_id]['merge'].pop()
                 self.messages_lock.release()
                 self.merge(merge_msg)
-                merged = True
+                break
+            elif "deny_merge" in self.messages[mwoe_msg.edge_id] and\
+                    len(self.messages[mwoe_msg.edge_id]['deny_merge']):
+                logging.info("Deny merge message recieved for this round from edge %s.", mwoe_msg.edge_id)
+                deny_msg = self.messages[mwoe_msg.edge_id]['deny_merge'].pop()
+                deny_msg = deny_msg.deny_merge_upward()
+                self.round_completed = True
+                self.messages_lock.release()
+                if self.parent_edge is not None:
+                    self.parent_edge.send_message(deny_msg, self.process_id)
                 break
             self.messages_lock.release()
             time.sleep(1)
-            index += 1
+
+    def handle_merge_request(self, msg, edge):
+        """Handles the merge mwoe message."""
+        self.merge_mwoe_received_lock.acquire()
+        while self.merge_mwoe_received is None:
+            self.merge_mwoe_received_lock.release()
+            # print "process %s waiting to handle merge request from edge: %s" %(self.process_id, edge.id)
+            time.sleep(1)
+            self.merge_mwoe_received_lock.acquire()
+        self.merge_mwoe_received_lock.release()
+        if self.merge_mwoe_received.edge_id != edge.id:
+            deny_msg = Message()
+            deny_msg = deny_msg.deny_merge()
+            edge.send_message(deny_msg, self.process_id)
+        return
 
     def handle_merge_mwoe(self, mwoe_msg):
         """Handles the merge mwoe message."""
-        if msg.process != self.process_id:
+        if mwoe_msg.process != self.process_id:
             for edge in [e for e in self.mst_edges if e != self.parent_edge]:
-                edge.send_message(msg, self.process_id)
+                edge.send_message(mwoe_msg, self.process_id)
             return
+        self.send_join_request(self.get_edge(mwoe_msg.edge_id))
         self.merge_mwoe(mwoe_msg)
-
 
     def work_on_merge_to_leader_msg(self, msg):
         """Process the merge message from the child process."""
@@ -370,3 +453,4 @@ class Process(object):
         ack_msg = ack_msg.acknowledge_leader()
         in_edge.send_message(ack_msg, self.process_id)
         logging.info("Acknowledge send through edge %s", in_edge.id)
+        self.round_completed = True
